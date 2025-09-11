@@ -127,6 +127,9 @@ void bl31_platform_setup(void)
 	case SUNXI_SOC_A523:
 		soc_name = "A523";
 		break;
+	case SUNXI_SOC_A733:
+		soc_name = "A733";
+		break;
 	default:
 		soc_name = "unknown";
 		break;
