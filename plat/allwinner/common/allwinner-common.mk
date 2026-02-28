@@ -6,7 +6,13 @@
 
 include lib/xlat_tables_v2/xlat_tables.mk
 include lib/libfdt/libfdt.mk
-include drivers/arm/gic/v2/gicv2.mk
+SUNXI_GIC_VERSION ?= v2
+ifeq ($(SUNXI_GIC_VERSION),v3)
+BL31_SOURCES		+= ${GICV3_SOURCES}
+else
+BL31_SOURCES		+= ${GICV2_SOURCES}
+endif
+include drivers/arm/gic/${SUNXI_GIC_VERSION}/gic${SUNXI_GIC_VERSION}.mk
 
 AW_PLAT			:=	plat/allwinner
 
@@ -24,7 +30,7 @@ BL31_SOURCES		+=	drivers/allwinner/axp/common.c		\
 				drivers/delay_timer/delay_timer.c	\
 				drivers/delay_timer/generic_delay_timer.c \
 				lib/cpus/${ARCH}/cortex_a53.S		\
-				plat/common/plat_gicv2.c		\
+				plat/common/plat_gic${SUNXI_GIC_VERSION}.c		\
 				plat/common/plat_psci_common.c		\
 				${AW_PLAT}/common/sunxi_bl31_setup.c	\
 				${AW_PLAT}/common/sunxi_pm.c		\

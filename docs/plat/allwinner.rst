@@ -26,6 +26,12 @@ To build for machines with an H616 or H313 SoC:
 
     make CROSS_COMPILE=aarch64-linux-gnu- PLAT=sun50i_h616 DEBUG=1 bl31
 
+To build for machines with an T536 SoC:
+
+.. code:: shell
+
+    make CROSS_COMPILE=aarch64-linux-gnu- PLAT=sun55i_t536 DEBUG=1 bl31
+
 
 Installation
 ------------

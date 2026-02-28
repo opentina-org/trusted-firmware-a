@@ -6,13 +6,17 @@
 
 #include <arch_helpers.h>
 #include <common/debug.h>
-#include <drivers/arm/gicv2.h>
 #include <drivers/delay_timer.h>
 #include <lib/mmio.h>
 #include <lib/psci/psci.h>
 
 #include <sunxi_mmap.h>
 #include <sunxi_private.h>
+#ifdef SUNXI_CPU_GIC600_BASE
+#include <drivers/arm/gicv3.h>
+#else
+#include <drivers/arm/gicv2.h>
+#endif
 
 #define SUNXI_WDOG0_CTRL_REG		(SUNXI_R_WDOG_BASE + 0x0010)
 #define SUNXI_WDOG0_CFG_REG		(SUNXI_R_WDOG_BASE + 0x0014)
@@ -27,20 +31,33 @@ static int sunxi_pwr_domain_on(u_register_t mpidr)
 
 static void sunxi_pwr_domain_off(const psci_power_state_t *target_state)
 {
-	gicv2_cpuif_disable();
+#ifdef SUNXI_CPU_GIC600_BASE
+       // gicv3_cpuif_disable();
+#else
+        gicv2_cpuif_disable();
+#endif
+
 
 	sunxi_cpu_power_off_self();
 }
 
 static void sunxi_pwr_domain_on_finish(const psci_power_state_t *target_state)
 {
-	gicv2_pcpu_distif_init();
-	gicv2_cpuif_enable();
+#ifdef SUNXI_CPU_GIC600_BASE
+       // gicv3_cpuif_enable();
+#else
+        gicv2_pcpu_distif_init();
+        gicv2_cpuif_enable();
+#endif
 }
 
 static void __dead2 sunxi_system_off(void)
 {
-	gicv2_cpuif_disable();
+#ifdef SUNXI_CPU_GIC600_BASE
+       // gicv3_cpuif_disable();
+#else
+        gicv2_cpuif_disable();
+#endif
 
 	/* Attempt to power down the board (may not return) */
 	sunxi_power_down();
@@ -53,7 +70,11 @@ static void __dead2 sunxi_system_off(void)
 
 static void __dead2 sunxi_system_reset(void)
 {
-	gicv2_cpuif_disable();
+#ifdef SUNXI_CPU_GIC600_BASE
+       // gicv3_cpuif_disable();
+#else
+        gicv2_cpuif_disable();
+#endif
 
 	/* Reset the whole system when the watchdog times out */
 	mmio_write_32(SUNXI_WDOG0_CFG_REG, 1);

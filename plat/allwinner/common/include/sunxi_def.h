@@ -13,6 +13,8 @@
 /* UART configuration */
 #define SUNXI_UART0_BAUDRATE		115200
 #define SUNXI_UART0_CLK_IN_HZ		SUNXI_OSC24M_CLK_IN_HZ
+#define SUNXI_RST_OFFSET               (16)
+#define SUNXI_GATING_OFFSET            (0)
 
 #define SUNXI_SOC_A64			0x1689
 #define SUNXI_SOC_H5			0x1718

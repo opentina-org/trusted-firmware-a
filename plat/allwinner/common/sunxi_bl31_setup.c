@@ -15,7 +15,6 @@
 #include <common/debug.h>
 #include <common/fdt_fixup.h>
 #include <common/fdt_wrappers.h>
-#include <drivers/arm/gicv2.h>
 #include <drivers/console.h>
 #include <drivers/generic_delay_timer.h>
 #include <drivers/ti/uart/uart_16550.h>
@@ -30,12 +29,32 @@
 static entry_point_info_t bl32_image_ep_info;
 static entry_point_info_t bl33_image_ep_info;
 
-static console_t console;
+console_t console;
 
+#ifdef SUNXI_CPU_GIC600_BASE //gic 600 controller exist, we are using gicv3
+#include <drivers/arm/gicv3.h>
+
+uintptr_t rdistif_base_addrs[PLATFORM_CORE_COUNT];
+
+static const gicv3_driver_data_t sunxi_gic_data = {
+	.gicd_base = SUNXI_GICD_BASE,
+	.gicr_base = SUNXI_GICR_BASE,
+	.rdistif_num = PLATFORM_CORE_COUNT,
+	.rdistif_base_addrs = rdistif_base_addrs,
+	/*
+	 * we set no interrupt as group0(handle by EL3) or group1s(handle by S-EL1) for now
+	 * all interrupts aussumpt to be handled by NS-EL1
+	 */
+	.interrupt_props = NULL,
+	.interrupt_props_num = 0,
+};
+#else
+#include <drivers/arm/gicv2.h>
 static const gicv2_driver_data_t sunxi_gic_data = {
 	.gicd_base = SUNXI_GICD_BASE,
 	.gicc_base = SUNXI_GICC_BASE,
 };
+#endif
 
 /*
  * Try to find a DTB loaded in memory by previous stages.
@@ -82,14 +101,39 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 				u_register_t arg2, u_register_t arg3)
 {
 	/* Initialize the debug console as soon as possible */
-	console_16550_register(SUNXI_UART0_BASE, SUNXI_UART0_CLK_IN_HZ,
-			       SUNXI_UART0_BAUDRATE, &console);
+	sunxi_uart_init();
 
+	uint32_t jump_instruction;
 #ifdef BL32_BASE
-	/* Populate entry point information for BL32 */
-	SET_PARAM_HEAD(&bl32_image_ep_info, PARAM_EP, VERSION_1, 0);
-	SET_SECURITY_STATE(bl32_image_ep_info.h.attr, SECURE);
-	bl32_image_ep_info.pc = BL32_BASE;
+	VERBOSE("BL31: BL32_BASE = 0x%x\n", BL32_BASE);  // 0x48600000
+	/*
+	 * Auto detect OP-TEE image type (64bit or 32bit) from `tee_spare_head.jump_instruction`.
+	 */
+	jump_instruction = *(uint32_t *)(unsigned long)BL32_BASE;
+	if ((jump_instruction & ~GENMASK(25, 0)) == 0x14000000) {
+		NOTICE("BL31: OP-TEE 64bit detected\n");
+		SET_PARAM_HEAD(&bl32_image_ep_info, PARAM_EP, VERSION_1, 0);
+		SET_SECURITY_STATE(bl32_image_ep_info.h.attr, SECURE);
+		bl32_image_ep_info.pc = BL32_BASE;
+		bl32_image_ep_info.spsr = SPSR_64(MODE_EL1, MODE_SP_ELX, DISABLE_ALL_EXCEPTIONS);
+		bl32_image_ep_info.args.arg0 = MODE_RW_64;
+
+	} else if ((jump_instruction & ~GENMASK(23, 0)) == 0xEA000000) {
+		NOTICE("BL31: OP-TEE 32bit detected\n");
+		SET_PARAM_HEAD(&bl32_image_ep_info, PARAM_EP, VERSION_1, 0);
+		SET_SECURITY_STATE(bl32_image_ep_info.h.attr, SECURE);
+		bl32_image_ep_info.pc = BL32_BASE;
+		bl32_image_ep_info.spsr = SPSR_MODE32(MODE32_svc, SPSR_T_ARM, SPSR_E_LITTLE, DISABLE_ALL_EXCEPTIONS);
+		bl32_image_ep_info.args.arg0 = MODE_RW_32;
+
+#if !CTX_INCLUDE_AARCH32_REGS
+		ERROR("We can't set CTX_INCLUDE_AARCH32_REG to be 0 when using 32bit OP-TEE\n");
+		ERROR("Please delete the config `CTX_INCLUDE_AARCH32_REGS := 0` in current plaform.mk\n");
+		//panic();	// fix me: when optee does not exist, it will unexpectedly go to the 32-bit branch
+#endif
+	} else {
+		ERROR("BL31: Unknown jump instruction in OP-TEE header\n");
+	}
 #endif
 
 	/* Populate entry point information for BL33 */
@@ -98,9 +142,26 @@ void bl31_early_platform_setup2(u_register_t arg0, u_register_t arg1,
 	 * Tell BL31 where the non-trusted software image
 	 * is located and the entry state information
 	 */
+#ifdef PLAT_SUNXI_NS_IMAGE_OFFSET
+	bl33_image_ep_info.pc = PLAT_SUNXI_NS_IMAGE_OFFSET;
+	jump_instruction = *(uint32_t *)(unsigned long)PLAT_SUNXI_NS_IMAGE_OFFSET;
+
+	if ((jump_instruction & ~GENMASK(25, 0)) == 0x14000000) {
+		//64bit
+		NOTICE("BL31: U-BOOT 64bit detected\n");
+		bl33_image_ep_info.spsr = SPSR_64(MODE_EL1, MODE_SP_ELX, DISABLE_ALL_EXCEPTIONS);
+
+	} else if ((jump_instruction & ~GENMASK(23, 0)) == 0xEA000000) {
+		NOTICE("BL31: U-BOOT 32bit detected\n");
+		bl33_image_ep_info.spsr = SPSR_MODE32(MODE32_svc, SPSR_T_ARM, SPSR_E_LITTLE, DISABLE_ALL_EXCEPTIONS);
+	} else {
+		ERROR("BL31: Unknown jump instruction in U-BOOT header\n");
+	}
+#else
 	bl33_image_ep_info.pc = PRELOADED_BL33_BASE;
 	bl33_image_ep_info.spsr = SPSR_64(MODE_EL2, MODE_SP_ELX,
 					  DISABLE_ALL_EXCEPTIONS);
+#endif
 	SET_SECURITY_STATE(bl33_image_ep_info.h.attr, NON_SECURE);
 }
 
@@ -148,11 +209,21 @@ void bl31_platform_setup(void)
 		NOTICE("BL31: No DTB found.\n");
 	}
 
+#ifdef SUNXI_CPU_GIC600_BASE //gic 600 controller exist, we are using gicv3
+	gicv3_driver_init(&sunxi_gic_data);
+	gicv3_distif_init();
+	gicv3_rdistif_init(plat_my_core_pos());
+	gicv3_cpuif_enable(plat_my_core_pos());
+#else
 	/* Configure the interrupt controller */
 	gicv2_driver_init(&sunxi_gic_data);
 	gicv2_distif_init();
 	gicv2_pcpu_distif_init();
 	gicv2_cpuif_enable();
+
+	gic_cpuif_init();
+	gic_distributor_init();
+#endif
 
 	sunxi_security_setup();
 

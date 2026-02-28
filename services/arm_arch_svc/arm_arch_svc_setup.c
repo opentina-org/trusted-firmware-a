@@ -13,6 +13,7 @@
 #include <services/arm_arch_svc.h>
 #include <smccc_helpers.h>
 #include <plat/common/platform.h>
+#include <lib/el3_runtime/context_mgmt.h>
 
 static int32_t smccc_version(void)
 {
@@ -94,6 +95,65 @@ static int32_t smccc_arch_id(u_register_t arg1)
 	return SMC_ARCH_CALL_INVAL_PARAM;
 }
 
+enum {
+	ARCH_ARM = 0,	/* arm */
+	ARCH_ARM64,	/* arm64 */
+};
+
+/*******************************************************************************
+ * This function programs EL3 registers and performs other setup to enable entry
+ * into the next image after BL31 at the next ERET.
+ ******************************************************************************/
+void prepare_nonsec_os_entry(uint64_t kernel_addr, uint64_t dtb_addr, uint64_t arch, bool is_hyper)
+{
+	entry_point_info_t next_image_info;
+	uint32_t image_type;
+	unsigned long sctlr;
+
+	/* Determine which image to execute next */
+	image_type = NON_SECURE;
+
+	/* Program EL3 registers to enable entry into the next EL */
+	memset(&next_image_info, 0, sizeof(next_image_info));
+	SET_SECURITY_STATE(next_image_info.h.attr, NON_SECURE);
+
+	if (arch == ARCH_ARM) {
+		next_image_info.spsr = SPSR_MODE32(MODE32_svc, SPSR_T_ARM, SPSR_E_LITTLE, DISABLE_ALL_EXCEPTIONS);
+		next_image_info.pc = kernel_addr;
+		next_image_info.args.arg0 = 0;
+		next_image_info.args.arg1 = 0xffffffff;
+		next_image_info.args.arg2 = dtb_addr;
+		VERBOSE("BL3-1: ARCH_ARM: dtb address = 0x%llx\n", dtb_addr);
+	} else if (arch == ARCH_ARM64) {
+		if (is_hyper)
+			next_image_info.spsr = SPSR_64(MODE_EL2, MODE_SP_ELX, DISABLE_ALL_EXCEPTIONS);
+		else
+			next_image_info.spsr = SPSR_64(MODE_EL1, MODE_SP_ELX, DISABLE_ALL_EXCEPTIONS);
+		next_image_info.pc = kernel_addr;
+		next_image_info.args.arg0 = dtb_addr;
+		VERBOSE("BL3-1: ARCH_ARM64: dtb address = 0x%llx\n", dtb_addr);
+	}
+#ifdef TIMERSTAMP_BASE
+	mmio_write_32(TIMERSTAMP_BASE+CNT_LOW_REG, 0);
+	mmio_write_32(TIMERSTAMP_BASE+CNT_HI_REG, 0);
+#endif
+	NOTICE("BL3-1: Next image address = 0x%llx\n", (unsigned long long)next_image_info.pc);
+	NOTICE("BL3-1: Next image spsr = 0x%x\n", next_image_info.spsr);
+
+	/* Disable the data cache and mmu */
+	__asm("mrs %0, SCTLR_EL1\n" : "=r" (sctlr));
+	sctlr &= ~(0x5<<0);
+	__asm volatile("msr SCTLR_EL1, %0\n" : : "r" (sctlr));
+
+	/* Clean and invalidate all data from the L1 Data cache */
+	dcsw_op_all(DCCISW);
+
+	cm_init_my_context(&next_image_info);
+	cm_prepare_el3_exit(image_type);
+}
+
+#define ARM_SVC_RUNNSOS                         0x8000ff04
+
 /*
  * Top-level Arm Architectural Service SMC handler.
  */
@@ -113,6 +173,9 @@ static uintptr_t arm_arch_svc_smc_handler(uint32_t smc_fid,
 		SMC_RET1(handle, smccc_arch_features(x1));
 	case SMCCC_ARCH_SOC_ID:
 		SMC_RET1(handle, smccc_arch_id(x1));
+	case ARM_SVC_RUNNSOS:
+		prepare_nonsec_os_entry(x1, x2, x3, false);
+		SMC_RET0(handle);
 #if WORKAROUND_CVE_2017_5715
 	case SMCCC_ARCH_WORKAROUND_1:
 		/*

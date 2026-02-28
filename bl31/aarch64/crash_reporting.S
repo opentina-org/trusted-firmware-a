@@ -457,7 +457,7 @@ print_el3_sys_regs:
 	bl	str_in_crash_buf_print
 
 	/* Print some platform registers */
-	plat_crash_print_regs
+	// plat_crash_print_regs
 
 	bl	plat_crash_console_flush
 

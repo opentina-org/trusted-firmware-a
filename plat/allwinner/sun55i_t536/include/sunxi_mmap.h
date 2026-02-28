@@ -1,0 +1,47 @@
+/*
+ * Copyright (c) 2014, Allwinner Technology Co., Ltd. All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#ifndef SUNXI_MMAP_H
+#define SUNXI_MMAP_H
+
+#include "autoGenHeaders/memory_map.h"
+
+#define SUNXI_CCU_BASE SUNXI_CCMU_BASE
+#define SUNXI_DRAM_BASE 0x40000000
+#define SUNXI_DRAM_VIRT_BASE 0x02000000
+#define SUNXI_SRAM_A2_SIZE 0x0002C000
+#define SUNXI_GIC_BASE SUNXI_CPU_GIC600_BASE
+#define SUNXI_GICD_BASE (SUNXI_CPU_GIC600_BASE + 0x0)
+#define SUNXI_GICR_BASE_C(i) (SUNXI_CPU_GIC600_BASE + 0x60000 + i * 0x20000)
+#define SUNXI_GICR_BASE (SUNXI_GICR_BASE_C(0))
+#define SUNXI_DMA_BASE SUNXI_DMAC0_BASE
+#define SUNXI_SYSCON_BASE SUNXI_SYSCTRL_BASE
+#define SUNXI_R_PIO_BASE SUNXI_R_GPIO_BASE
+#define SUNXI_PIO_BASE SUNXI_GPIO_BASE
+#define SUNXI_TZPC_BASE (SUNXI_R_SPC_BASE)
+#define SUNXI_TZMA_BASE (SUNXI_R_TZMA_BASE)
+#define SUNXI_SMC_BASE  (SUNXI_MEMC_SMC_BASE)
+#define SUNXI_R_WDOG_BASE		SUNXI_R_WDG_BASE
+/*
+ * seems we have different core control process in A55 core
+ * use a write invalid addr to make sure compile pass first
+ */
+#define SUNXI_CPUCFG_BASE (0x09010000)
+#define SUNXI_R_CPUCFG_BASE (0x09010000)
+
+/*monitor area(atf+scp) 2M (0x48000000~0x48200000)*/
+#define SUNXI_TRUSTED_MONITOR_BASE	(0x48000000)
+#define SUNXI_TRUSTED_MONITOR_LIMIT	(SUNXI_TRUSTED_MONITOR_BASE + (2 << 20))
+
+/*sec os area 14M (0x48200000~0x49000000)*/
+#define SUNXI_TRUSTED_DRAM_BASE	0x48200000
+#define SUNXI_TRUSTED_DRAM_SIZE	(14 << 20)
+
+/*TA share memory 4M (0x48200000~0x48600000)*/
+#define SUNXI_TA_SHARE_MEM_BASE	SUNXI_TRUSTED_DRAM_BASE
+#define SUNXI_TA_SHARE_MEM_SIZE	(4 << 20)
+
+#endif /* SUNXI_MMAP_H */

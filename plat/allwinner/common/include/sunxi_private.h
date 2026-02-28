@@ -41,6 +41,8 @@ void sunxi_set_gpio_out(char port, int pin, bool level_high);
 int sunxi_init_platform_r_twi(uint16_t socid, bool use_rsb);
 void sunxi_execute_arisc_code(uint32_t *code, size_t size, uint16_t param);
 
+void sunxi_uart_init(void);
+
 #ifdef SUNXI_BL31_IN_DRAM
 void sunxi_prepare_dtb(void *fdt);
 #else
